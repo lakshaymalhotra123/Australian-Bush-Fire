@@ -1,0 +1,240 @@
+---
+  title: "Shiny Dash"
+  date: "16 June 2020"
+  output: html_document
+  runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+__Load required packages:__
+```{r loadpackages, message=FALSE}
+if(!require("pacman")) install.packages("pacman")
+pacman::p_load(e1071, caret, tidyverse, data.table, gains,xlsx,shiny,zoo,xts,lubridate,dplyr,ggplot2,shinydashboard,
+               reshape2,plotly,readr,imputeTS,leaflet,RColorBrewer,plotly,highcharter,Rfast,shinycssloaders,DT,
+               ggthemes,colorspace,ggmap,RCurl,RJSONIO,plyr,leaflet,leaflet.extras)
+
+```
+## ######################################## Loading the File #############################################
+
+
+```{r data, include=FALSE}
+setwd("A:\\Semester 5\\Advance BA with R\\Aus_bushfire")
+df <- read_csv('Aus_bushfire.csv')
+```
+
+## ######################################### Data Cleaning ###############################################
+
+setwd("A:\\Work\\Aus_bushfire")
+
+```{r data, include=FALSE}
+df <- df %>% filter(Country== 'AU' )
+df$acq_month <-  months(as.POSIXlt(df$acq_date, format="%d-%m-%Y"))
+df$acq_day <- day(as.POSIXlt(df$acq_date, format="%d-%m-%Y"))
+```
+
+## ##################################### Shiny Dashboard ###############################################
+
+```{r UI, include=FALSE}
+ ui <- dashboardPage(
+  dashboardHeader(title = "Dashboard "),
+  dashboardSidebar(
+  tags$style(type="text/css",".shiny-output-error { visibility: hidden; }",
+                  ".shiny-output-error:before { visibility: hidden; }"),
+
+  width = 300,
+  sidebarMenu(
+  
+  menuItem("Australian Bushfire", tabName = "HeatMap",icon = icon("dashboard"))
+  )
+),
+
+  dashboardBody(
+    tabItems(
+
+tabItem(tabName = "HeatMap",
+
+    fluidPage(
+       # Application title
+  titlePanel("Australian Bushfire"),
+       
+        
+   fluidRow(
+  
+     box( title = "Controls",solidHeader = TRUE,collapsible = TRUE,status = "primary",background = "black",width =6,height = 410,
+        sliderInput(inputId = "selected_Day", "Day:",
+                  min = 1, max =31,
+                  value = 4),
+
+       selectInput(inputId = "selected_Month",
+                   label = "Choose Month:",
+                   choices = c(unique(df$acq_month))),
+       
+       selectInput(inputId = "selected_State",
+                   label = "Choose Territory:",
+                   choices = c(unique(df$State))),
+       
+       radioButtons(inputId = "chv", 
+                    label = "Choose Type",
+                    c("Fire Power Radiation" = "FRP",
+                      "Brightness Level" = "BL"))
+       ),
+     
+          box(title = "Heat Map", solidHeader = TRUE, collapsible = TRUE,status = "warning",background = "black",width =6,height = 410,
+       leafletOutput(outputId = "heatmap",height = "350px") %>% withSpinner(color="#0dc5c1")
+       ),
+     
+       box(title = "Line Chart",status = "warning",solidHeader = TRUE,collapsible = TRUE,background = "black",width =6,height = 410,
+       plotlyOutput(outputId="scatterplot",height="350px")
+       ),
+  
+   
+       box(title = "Bar Chart",status = "warning",solidHeader = TRUE,collapsible = TRUE,background = "black",width =6,height = 410,
+       plotlyOutput(outputId="barplot",height="350px")
+       )
+     
+   )
+   )
+ )
+ )
+ 
+
+)
+)
+```
+
+## ########################################## Server ###### ############################################
+
+```{r server, include=FALSE}
+
+server <- function(input, output) {
+  
+ 
+     # Create scatterplot object the plotOutput function is expecting
+   
+   output$heatmap <- renderLeaflet({
+     
+     
+     df1<- df %>% filter(acq_month==input$selected_Month & acq_day == input$selected_Day)
+     
+     if(input$chv == "FRP") {
+       
+        beatCol <- colorNumeric(palette = 'RdYlGn', df1$frp)
+     
+    leaflet(df1) %>%
+    addProviderTiles(providers$Esri.WorldStreetMap) %>%
+    setView( 134.22436681269832, -27.031126703266906, 4 ) %>%
+    addHeatmap(
+      lng = ~longitude, lat = ~latitude, intensity = ~frp,
+      blur = 20, max = 0.05, radius = 20
+  )   %>%
+      
+       addLegend(pal = beatCol ,values = ~frp,
+            title = 'Fire Power Radiation over Region',
+            opacity = 1,position = "bottomright")
+     }
+     
+         else if(input$chv == "BL") {
+       
+        beatCol <- colorNumeric(palette = 'RdYlGn', df1$frp)
+     
+    leaflet(df1) %>%
+    addProviderTiles(providers$Esri.WorldStreetMap) %>%
+    setView( 134.22436681269832, -27.031126703266906, 4 ) %>%
+    addHeatmap(
+      lng = ~longitude, lat = ~latitude, intensity = ~frp,
+      blur = 20, max = 0.05, radius = 20
+  )   %>%
+      
+       addLegend(pal = beatCol ,values = ~frp,
+            title = 'Brightness Level over Region',
+            opacity = 1,position = "bottomright")
+     }
+      
+      
+   })
+   
+   output$scatterplot <- renderPlotly({
+      
+      df_scatter <- df %>% subset(State == input$selected_State & acq_month == input$selected_Month)
+      
+
+      if(input$chv == "FRP") {
+        df_scatter <- aggregate(df_scatter$frp, by=list(df_scatter$Region,df_scatter$acq_day), FUN=mean)
+      
+      plot_ly(df_scatter, x = ~Group.2, y = ~x, mode = 'lines', color = ~Group.1) %>%
+                     
+       
+       
+          layout(title = paste("Average Fire Power Radiation over time"),
+                 xaxis = list(title = "Days"),
+                 yaxis = list(title = "Average Fire Power Radiation")
+                 )
+        
+      }
+      
+    else if(input$chv == "BL") {
+        df_scatter <- aggregate(df_scatter$bright_ti5, by=list(df_scatter$Region,df_scatter$acq_day), FUN=mean)
+      
+      plot_ly(df_scatter, x = ~Group.2, y = ~x, mode = 'lines',color = ~Group.1) %>%
+                     
+       
+       
+          layout(title = paste("Average Brightness Level over time"),
+                 xaxis = list(title = "Days"),
+                 yaxis = list(title = "Average Brightness Level")
+                 )
+        
+      }
+                })
+    
+    
+    output$barplot <- renderPlotly({
+      
+      df2<- df %>% subset(State == input$selected_State & acq_month == input$selected_Month)
+
+      if (input$chv == 'FRP'){
+        
+      df2 <- aggregate(df2$frp, by=list(df2$Region), FUN=max) %>% arrange(desc(x))
+      df2<- head(df2,5)
+      
+          plot_ly(df2, x = ~reorder(Group.1,x),y=~x,color = ~Group.1) %>%
+  add_bars() %>%
+  
+          layout(title = paste("Top 5 Fire Power Radiation Regions"),
+                 xaxis = list(title = "Regions"),
+                 yaxis = list(title = "Fire Power Radiation"),
+                 plot_bgcolor = "#FFFFFF",
+                 paper_bgcolor='#FFFFFF',
+                 bargap = 3
+                 )
+      } 
+      
+        else if (input$chv == 'BL'){
+        
+      df2 <- aggregate(df2$bright_ti5, by=list(df2$Region), FUN=max) %>% arrange(desc(x))
+      df2<- head(df2,5)
+      
+          plot_ly(df2, x = ~reorder(Group.1,x),y=~x,color = ~Group.1) %>%
+  add_bars() %>%
+  
+          layout(title = paste("Top 5 Brightness Level Regions"),
+                 xaxis = list(title = "Regions"),
+                 yaxis = list(title = "Brightness Level"),
+                 plot_bgcolor = "#FFFFFF",
+                 paper_bgcolor='#FFFFFF',
+                 bargap = 3
+                 )
+      } 
+          }) 
+      
+      
+    
+}
+```
+
+```{r App, include=FALSE}
+shinyApp(ui = ui, server = server) 
+```
